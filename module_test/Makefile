@@ -7,7 +7,7 @@ endef
 
 ifneq ($(KERNELRELEASE),)
 	obj-m := helloworld.o
-	helloworld-objs := hello.o helper.o
+	helloworld-objs := hello.o helper.o zc_dev.o
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
 	PWD := $(shell pwd)
