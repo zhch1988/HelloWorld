@@ -33,7 +33,7 @@ struct zc_device zdevice;
 
 static int zc_open(struct inode *inode, struct file *filp)
 {
-	struct zc_device* idev = container_of(&inode->i_cdev, struct zc_device, cdev);
+	struct zc_device* idev = container_of(inode->i_cdev, struct zc_device, cdev);
 	
 	
 	ZCPRINT("zc_open, inode->i_cdev=%p, idev=%p\n", inode->i_cdev, idev);

@@ -40,7 +40,7 @@ void zc_device_release(struct zv_device *vdev)
 static int init_cdev(struct zc_device *vdev)
 {
 	int ret = -1;
-	struct cdev *cdev;
+	struct cdev *cdev = &vdev->cdev;
     struct device *device;
 	struct class *cls;
 
@@ -61,10 +61,10 @@ static int init_cdev(struct zc_device *vdev)
 	vdev->cls = cls;
 
     /*初始化cdev结构*/
-	cdev = cdev_alloc();
+	/* cdev = cdev_alloc();
 	if (cdev == NULL) {
 		goto err_cdev_alloc;
-	}
+	} */
     cdev_init(cdev, vdev->fops);
     cdev->owner = THIS_MODULE;
     cdev->ops = vdev->fops;
@@ -76,7 +76,7 @@ static int init_cdev(struct zc_device *vdev)
         ZCPRINT("init_cdev: add cdev error: %d", ret);
         goto err_cdev_add;
     }
-	vdev->cdev = cdev;
+	//vdev->cdev = cdev;
 	ZCPRINT("cdev=%p\n", cdev);
     device = device_create(cls, NULL, vdev->devno, NULL, CDEVFILE);
     if(IS_ERR(device)){
@@ -110,11 +110,11 @@ static void release_cdev(struct zc_device *vdev)
 		device_destroy(vdev->cls, vdev->devno);
 		vdev->dev = NULL;
 	}
-	if(vdev->cdev)
+	if(1)
 	{
-		cdev_del(vdev->cdev);
-		kfree(vdev->cdev);
-		vdev->cdev = NULL;
+		cdev_del(&vdev->cdev);
+		//kfree(vdev->cdev);
+		//vdev->cdev = NULL;
 	}
 	if(vdev->cls != NULL && !IS_ERR(vdev->cls))
 	{

@@ -19,7 +19,7 @@ struct zc_device
 
 	/* sysfs */
 	struct device *dev;		/* zc device */
-	struct cdev *cdev;		/* character device */
+	struct cdev cdev;		/* character device */
 	dev_t devno;
 	struct class *cls;
 
