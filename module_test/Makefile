@@ -19,4 +19,4 @@ clean:
 	$(call make_subdir,clean)
 	rm -rf *.o .cmd *.ko *.mod.*
 	rm -f modules.order Module.symvers
-	rm -rf .[a-zA-Z]*
+	rm -rf .[a-zA-Z0-9]*
