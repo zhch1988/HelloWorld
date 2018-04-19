@@ -1,11 +1,3 @@
 # HelloWorld
-TEST
+1.dependency_module是依赖模块，需要先加载才能加载module_test模块
 
-Added at 11:33 2015/2/3
-
-
-123
-
-222
-
-new add

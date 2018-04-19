@@ -45,7 +45,7 @@ struct zc_device * __must_check zc_device_alloc(void);
 
 void zv_device_release(struct zv_device *vdev);
 
-struct zc_device* get_zc_device(void);
+//struct zc_device* get_zc_device(void);
 
 static inline void *zc_get_drvdata(struct zc_device *vdev)
 {

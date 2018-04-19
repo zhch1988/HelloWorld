@@ -28,11 +28,15 @@ module_param(b, int, S_IRUGO | S_IWUSR);
 
 extern int dependency_sum(int a, int b);
 
+struct zc_device zdevice;
+
+
 static int zc_open(struct inode *inode, struct file *filp)
 {
-	struct zc_device* idev = (struct zc_device*) get_zc_device();
+	struct zc_device* idev = container_of(&inode->i_cdev, struct zc_device, cdev);
 	
-	ZCPRINT("zc_open\n");
+	
+	ZCPRINT("zc_open, inode->i_cdev=%p, idev=%p\n", inode->i_cdev, idev);
 	if (!idev) 
         return -ENODEV;
 	filp->private_data = idev;
@@ -262,7 +266,7 @@ static int __init hello_init(void)
 {
     int i = 0;
     char c[256];
-	struct zc_device *zdev = NULL;
+	//struct zc_device *zdev = NULL;
 	
     sprintf(c,"Hello World inited. Linux kernel version %s\n", UTS_RELEASE);
     myPrint((const char*)c);
@@ -278,14 +282,14 @@ static int __init hello_init(void)
 	
 	printk(KERN_INFO "a=%d, b=%d, dependency_sum=%d\n", a, b, dependency_sum(a, b));
 	
-	zdev = kzalloc(sizeof(struct zc_device), GFP_KERNEL);
-	if (zdev == NULL)
-		return -ENOMEM;
-	zdev->fops = &zc_fops;
-	zdev->have_data = false;
+	// zdev = kzalloc(sizeof(struct zc_device), GFP_KERNEL);
+	// if (zdev == NULL)
+		// return -ENOMEM;
+	zdevice.fops = &zc_fops;
+	zdevice.have_data = false;
 	
-	zc_register_device(zdev);
-	
+	zc_register_device(&zdevice);
+	ZCPRINT("addr of zdevice=%p\n", &zdevice);
 	
     return 0;
 }
@@ -294,19 +298,18 @@ static int __init hello_init(void)
 static void __exit hello_exit(void)
 {
     char c[256];
-	struct zc_device *zdev = NULL;
+	// struct zc_device *zdev = NULL;
     sprintf(c, "Hello World exit with: name=%s, count=%d\n", name, count);
     myPrint(c);
 	printk(KERN_INFO "Calling process is \"%s\" (pid %i)\n", current->comm, current->pid);
-//    myPrint("Hello World exit\n");
-//    printk(KERN_ALERT "Hello World exit\n");
-	zdev = get_zc_device();
-	printk(KERN_INFO "zdev=%p", zdev);
-	if(zdev)
-	{
-		zc_unregister_device(zdev);
-	}
-	kfree(zdev);
+
+	// zdev = get_zc_device();
+	// printk(KERN_INFO "zdev=%p", zdev);
+	// if(zdevice)
+	// {
+		zc_unregister_device(&zdevice);
+	// }
+	// kfree(zdev);
 }
 
 module_init(hello_init);

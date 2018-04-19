@@ -17,15 +17,15 @@
  */
 
 
-static struct zc_device *idev = NULL;
+//static struct zc_device *idev = NULL;
 static int init_cdev(struct zc_device *vdev);
 static void release_cdev(struct zc_device *vdev);
 
 
-struct zc_device* get_zc_device()
+/* struct zc_device* get_zc_device()
 {
 	return idev;
-}
+} */
 
 struct zc_device * zc_device_alloc(void)
 {
@@ -77,6 +77,7 @@ static int init_cdev(struct zc_device *vdev)
         goto err_cdev_add;
     }
 	vdev->cdev = cdev;
+	ZCPRINT("cdev=%p\n", cdev);
     device = device_create(cls, NULL, vdev->devno, NULL, CDEVFILE);
     if(IS_ERR(device)){
         ret = PTR_ERR(device);
@@ -135,9 +136,9 @@ int zc_register_device(struct zc_device *vdev)
 	if(ret == 0)
 	{
 		init_waitqueue_head(&vdev->inq);
-		idev = vdev;
+		//idev = vdev;
 	}
-	printk(KERN_INFO "zc_register_device: vdev=%p, idev=%p", vdev, idev);
+	printk(KERN_INFO "zc_register_device: vdev=%p", vdev);
 	
 	return ret;
 }
@@ -147,6 +148,6 @@ void zc_unregister_device(struct zc_device *vdev)
 	if(!vdev)
 		return;
 	release_cdev(vdev);
-	idev = NULL;
+	//idev = NULL;
 }
 
