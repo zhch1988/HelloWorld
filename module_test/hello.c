@@ -28,7 +28,9 @@ module_param(b, int, S_IRUGO | S_IWUSR);
 
 extern int dependency_sum(int a, int b);
 
-struct zc_device zdevice;
+struct zc_device zdevice = {
+	.have_data = true
+};
 
 
 static int zc_open(struct inode *inode, struct file *filp)
@@ -205,6 +207,31 @@ static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 /*读函数*/
 static ssize_t zc_read(struct file *filp, char __user *buf, size_t size, loff_t *ppos)
 {
+	struct zc_device* idev = filp->private_data;
+	char data[] = "你好\n";
+	int ret = 0, err = 0;
+
+	ZCPRINT("zc_read\n");
+	if(idev->have_data)
+	{
+		if (err = copy_to_user(buf, (void*)data, strlen(data)))
+		{
+			ret = -EFAULT;
+		}
+		else
+		{
+			ret = strlen(data) - err;
+			// ZCPRINT("read %d bytes(s) from %p\n", ret, data);
+			// printk(KERN_INFO "read %d bytes(s) from %d\n", count, p);
+		}
+	}
+	else
+	{
+		ret = 0;
+	}
+	idev->have_data = !(idev->have_data);
+	ZCPRINT("read %d bytes(s)\n", ret);
+
   // unsigned long p =  *ppos;
   // unsigned int count = size;
   // int ret = 0;
@@ -233,7 +260,7 @@ static ssize_t zc_read(struct file *filp, char __user *buf, size_t size, loff_t 
   
   // have_data = false; /* 表明不再有数据可读 */
   // /* 唤醒写进程 */
-  return size;
+  return ret;
 }
 
 unsigned int zc_poll(struct file *filp, poll_table *wait)
@@ -256,6 +283,7 @@ unsigned int zc_poll(struct file *filp, poll_table *wait)
 struct file_operations zc_fops = {
 	.owner = THIS_MODULE,
 	.open = zc_open,
+	.read = zc_read,
 	.write = zc_write,
 	.unlocked_ioctl = zc_ioctl,
 	.release = zc_release,
@@ -286,7 +314,7 @@ static int __init hello_init(void)
 	// if (zdev == NULL)
 		// return -ENOMEM;
 	zdevice.fops = &zc_fops;
-	zdevice.have_data = false;
+	zdevice.have_data = true;
 	
 	zc_register_device(&zdevice);
 	ZCPRINT("addr of zdevice=%p\n", &zdevice);

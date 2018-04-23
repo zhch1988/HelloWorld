@@ -5,7 +5,7 @@
 
 #define ZCLOG
 #ifdef ZCLOG
-#define ZCPRINT(format, ...) printk(KERN_INFO "[ZC]" format, ##__VA_ARGS__)
+#define ZCPRINT(format, ...) printk(KERN_INFO "[ZC]:" format, ##__VA_ARGS__)
 #else
 #define ZCPRINT(format, ...)
 #endif
