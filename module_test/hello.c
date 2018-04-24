@@ -64,7 +64,7 @@ static ssize_t zc_write(struct file *filp, const char __user *buf,
 	// struct audio_transfer *transfer;
 	struct zc_device* idev = filp->private_data;
 	
-	ZCPRINT("zc_write, size=%u, offset=%d\n", sz, *off);
+	ZCPRINT("zc_write, size=%lu, offset=%lld\n", sz, *off);
 	
 	err = !access_ok(VERIFY_READ, (void *)buf, sz);
     if (err)
@@ -165,7 +165,7 @@ static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         //ret = put_user(bias, (int *)arg);
 		if(!idev->have_data)
 			return -EAGAIN;
-		if(ret = copy_to_user((zc_ioctl_data *)arg, &idev->received_data, sizeof(zc_ioctl_data)))
+		if((ret = copy_to_user((void *)arg, &idev->received_data, sizeof(zc_ioctl_data))))
 		{
 			return -EFAULT;  
 		}
@@ -175,7 +175,7 @@ static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
       case ZC_IOCSET: 
         //ret = get_user(ioarg, (int *)arg);
 		memset(&data, 0, sizeof(zc_ioctl_data));
-		if(ret = copy_from_user(&data, arg, sizeof(zc_ioctl_data)))
+		if((ret = copy_from_user(&data, (void *)arg, sizeof(zc_ioctl_data))))
 		{
 			return -EFAULT;
 		}
@@ -211,16 +211,17 @@ static ssize_t zc_read(struct file *filp, char __user *buf, size_t size, loff_t 
 	char data[] = "你好\n";
 	int ret = 0, err = 0;
 
-	ZCPRINT("zc_read\n");
-	if(idev->have_data)
+	ZCPRINT("zc_read, size=%lu, ppos=%lld\n", size, *ppos);
+	if(idev->have_data && *ppos < strlen(data))
 	{
-		if (err = copy_to_user(buf, (void*)data, strlen(data)))
+		if ((err = copy_to_user(buf, (void*)(data + *ppos), strlen(data) - *ppos)))
 		{
 			ret = -EFAULT;
 		}
 		else
 		{
 			ret = strlen(data) - err;
+			*ppos += ret;
 			// ZCPRINT("read %d bytes(s) from %p\n", ret, data);
 			// printk(KERN_INFO "read %d bytes(s) from %d\n", count, p);
 		}
@@ -229,7 +230,7 @@ static ssize_t zc_read(struct file *filp, char __user *buf, size_t size, loff_t 
 	{
 		ret = 0;
 	}
-	idev->have_data = !(idev->have_data);
+	//idev->have_data = !(idev->have_data);
 	ZCPRINT("read %d bytes(s)\n", ret);
 
   // unsigned long p =  *ppos;
@@ -263,7 +264,7 @@ static ssize_t zc_read(struct file *filp, char __user *buf, size_t size, loff_t 
   return ret;
 }
 
-unsigned int zc_poll(struct file *filp, poll_table *wait)
+static unsigned int zc_poll(struct file *filp, poll_table *wait)
 {
     struct zc_device* idev = filp->private_data;
     unsigned int mask = 0;
@@ -279,6 +280,33 @@ unsigned int zc_poll(struct file *filp, poll_table *wait)
     return mask;
 }
 
+static loff_t zc_seek(struct file * filp , loff_t offset, int whence)
+{
+	struct zc_device *dev = filp->private_data;
+	loff_t newpos;
+
+	ZCPRINT("zc_seek, offset=%llu, whence=%d\n", offset, whence);
+	switch(whence)
+	{
+	case 0: /* SEEK_SET */
+		newpos = offset;
+		break;
+	case 1: /* SEEK_CUR */
+		newpos = filp->f_pos + offset;
+		break;
+	case 2: /* SEEK_END */
+		newpos = sizeof(dev->buf) + offset;
+		break;
+	default: /* can't happen */
+		return -EINVAL;
+	}
+	if (newpos < 0)
+		return -EINVAL;
+	filp->f_pos = newpos;
+	return newpos;
+
+}
+
 
 struct file_operations zc_fops = {
 	.owner = THIS_MODULE,
@@ -288,6 +316,7 @@ struct file_operations zc_fops = {
 	.unlocked_ioctl = zc_ioctl,
 	.release = zc_release,
 	.poll = zc_poll,
+	.llseek = zc_seek,
 };
 
 static int __init hello_init(void)
@@ -335,7 +364,7 @@ static void __exit hello_exit(void)
 	// printk(KERN_INFO "zdev=%p", zdev);
 	// if(zdevice)
 	// {
-		zc_unregister_device(&zdevice);
+	zc_unregister_device(&zdevice);
 	// }
 	// kfree(zdev);
 }

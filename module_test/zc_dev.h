@@ -29,7 +29,7 @@ struct zc_device
 	/* callbacks */
 	//void (*release)(struct ifly_device *idev);
 
-	char name[32];
+	char buf[256];
 	/* serialization lock */
 	//struct mutex *lock;
 	bool have_data;
@@ -43,7 +43,7 @@ void zc_unregister_device(struct zc_device *vdev);
 
 struct zc_device * __must_check zc_device_alloc(void);
 
-void zv_device_release(struct zv_device *vdev);
+void zc_device_release(struct zc_device *vdev);
 
 //struct zc_device* get_zc_device(void);
 

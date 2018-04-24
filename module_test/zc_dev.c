@@ -32,7 +32,7 @@ struct zc_device * zc_device_alloc(void)
 	return kzalloc(sizeof(struct zc_device), GFP_KERNEL);
 }
 
-void zc_device_release(struct zv_device *vdev)
+void zc_device_release(struct zc_device *vdev)
 {
 	kfree(vdev);
 }
