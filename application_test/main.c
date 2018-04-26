@@ -3,6 +3,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "zc_cdev.h"
 
@@ -21,7 +22,7 @@ int main(int argc,char *argv[])
 
 	devfd = open("/dev/" CDEVFILE, O_RDWR);
 	printf("devfd=%d\n", devfd);
-	if(devfd == NULL)
+	if(devfd == -1)
 	{
 		printf("fopen error!\n");
 		return -1;
@@ -35,7 +36,6 @@ int main(int argc,char *argv[])
 
 	ret = write(devfd, buf, 512);
 	printf("write returns %d, errno=%d \n", ret, errno);
-
 
 	close(devfd);
 	return 0;

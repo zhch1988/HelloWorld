@@ -4,6 +4,7 @@
 #include <linux/sched.h>
 #include <linux/fs.h>
 #include <linux/slab.h>
+#include <linux/platform_device.h>
 
 #include "helper.h"
 #include "ZCLog.h"
@@ -14,6 +15,7 @@
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("ZhengChen");
 MODULE_VERSION("1.0");
+MODULE_DESCRIPTION("My Module Test");
 
 
 static int count = 1;
@@ -40,19 +42,19 @@ static int zc_open(struct inode *inode, struct file *filp)
 	
 	ZCPRINT("zc_open, inode->i_cdev=%p, idev=%p\n", inode->i_cdev, idev);
 	if (!idev) 
-        return -ENODEV;
+		return -ENODEV;
 	filp->private_data = idev;
-    return 0;
+	return 0;
 }
 
 static int zc_release(struct inode *inode, struct file *filp)
 {
 	ZCPRINT("zc_release\n");
-    return 0;
+	return 0;
 }
 
 static ssize_t zc_write(struct file *filp, const char __user *buf,
-		size_t sz, loff_t *off)
+	size_t sz, loff_t *off)
 {
 	size_t sended = 0, realSended = 0;
 	size_t ksize = 64;
@@ -67,12 +69,12 @@ static ssize_t zc_write(struct file *filp, const char __user *buf,
 	ZCPRINT("zc_write, size=%lu, offset=%lld\n", sz, *off);
 	
 	err = !access_ok(VERIFY_READ, (void *)buf, sz);
-    if (err)
+	if (err)
 	{
 		printk(KERN_ERR "zc_write access error\n");
 		return -EFAULT;
 	}
-        
+
 	
 	tmpbuf = kzalloc(sz, GFP_KERNEL);
 	if(copy_from_user(tmpbuf, buf, sz))  
@@ -132,36 +134,36 @@ static ssize_t zc_write(struct file *filp, const char __user *buf,
 static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int ret = 0;
-    int err = 0;
+	int err = 0;
 	struct zc_device* idev = filp->private_data;
 	// struct audio_device *audio;
 	// struct audio_transfer *transfer;
-    char *ioarg;
+	char *ioarg;
 	zc_ioctl_data data;
 
 	ZCPRINT("zc_ioctl\n");
     /* 检测命令的有效性 */
-    if (_IOC_TYPE(cmd) != ZC_MAGIC) 
-        return -EINVAL;
-    if (_IOC_NR(cmd) > ZC_IOC_MAXNR) 
-        return -EINVAL;
+	if (_IOC_TYPE(cmd) != ZC_MAGIC) 
+		return -EINVAL;
+	if (_IOC_NR(cmd) > ZC_IOC_MAXNR) 
+		return -EINVAL;
 
     /* 根据命令类型，检测参数空间是否可以访问 */
-    if (_IOC_DIR(cmd) & _IOC_READ)
-        err = !access_ok(VERIFY_WRITE, (void *)arg, _IOC_SIZE(cmd));
-    else if (_IOC_DIR(cmd) & _IOC_WRITE)
-        err = !access_ok(VERIFY_READ, (void *)arg, _IOC_SIZE(cmd));
-    if (err) 
-        return -EFAULT;
+	if (_IOC_DIR(cmd) & _IOC_READ)
+		err = !access_ok(VERIFY_WRITE, (void *)arg, _IOC_SIZE(cmd));
+	else if (_IOC_DIR(cmd) & _IOC_WRITE)
+		err = !access_ok(VERIFY_READ, (void *)arg, _IOC_SIZE(cmd));
+	if (err) 
+		return -EFAULT;
 
     /* 根据命令，执行相应的操作 */
-    switch(cmd) {
+	switch(cmd) {
 
       /* 打印当前设备信息 */
-      case ZC_IOC:
-        break;
+		case ZC_IOC:
+		break;
       /* 读取参数 */
-      case ZC_IOCGET:
+		case ZC_IOCGET:
         //ret = put_user(bias, (int *)arg);
 		if(!idev->have_data)
 			return -EAGAIN;
@@ -170,9 +172,9 @@ static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			return -EFAULT;  
 		}
 		idev->have_data = false;
-        break;
+		break;
       /* 设置参数 */
-      case ZC_IOCSET: 
+		case ZC_IOCSET: 
         //ret = get_user(ioarg, (int *)arg);
 		memset(&data, 0, sizeof(zc_ioctl_data));
 		if((ret = copy_from_user(&data, (void *)arg, sizeof(zc_ioctl_data))))
@@ -195,13 +197,13 @@ static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			ZCPRINT("Failed to requeue request (%d).\n", ret);
 			usb_ep_set_halt(transfer->in_ep);
 		} */
-        break;
+		break;
 
-      default:  
-        return -EINVAL;
-    }
+		default:  
+		return -EINVAL;
+	}
 
-    return ret;
+	return ret;
 }
 
 /*读函数*/
@@ -237,12 +239,12 @@ static ssize_t zc_read(struct file *filp, char __user *buf, size_t size, loff_t 
   // unsigned int count = size;
   // int ret = 0;
   // struct zc_device* idev = filp->private_data;
-    
+
   // while (!idev->have_data) /* 没有数据可读，考虑为什么不用if，而用while */
   // {
         // if (filp->f_flags & O_NONBLOCK)
             // return -EAGAIN;
-    
+
     // wait_event_interruptible(dev->inq,have_data);
   // }
 
@@ -255,29 +257,29 @@ static ssize_t zc_read(struct file *filp, char __user *buf, size_t size, loff_t 
   // {
     // *ppos += count;
     // ret = count;
-   
+
     // printk(KERN_INFO "read %d bytes(s) from %d\n", count, p);
   // }
-  
+
   // have_data = false; /* 表明不再有数据可读 */
   // /* 唤醒写进程 */
-  return ret;
+	return ret;
 }
 
 static unsigned int zc_poll(struct file *filp, poll_table *wait)
 {
-    struct zc_device* idev = filp->private_data;
-    unsigned int mask = 0;
-    
+	struct zc_device* idev = filp->private_data;
+	unsigned int mask = 0;
+
 	ZCPRINT("zc_poll\n");
-   /*将等待队列添加到poll_table */
-    poll_wait(filp, &idev->inq,  wait);
- 
-    
-    if (idev->have_data)         
+	/*将等待队列添加到poll_table */
+	poll_wait(filp, &idev->inq,  wait);
+
+
+	if (idev->have_data)         
 		mask |= POLLIN | POLLRDNORM;  /* readable */
 
-    return mask;
+		return mask;
 }
 
 static loff_t zc_seek(struct file * filp , loff_t offset, int whence)
@@ -319,23 +321,46 @@ struct file_operations zc_fops = {
 	.llseek = zc_seek,
 };
 
+static int hello_probe(struct platform_device *pdev)  
+{  
+	ZCPRINT("hello_probe\n");
+	dev_set_drvdata(&pdev->dev, &zdevice);
+
+    return 0;  
+}  
+
+static int hello_remove(struct platform_device *pdev)  
+{
+	struct zc_device *zcdevice = (struct zc_device *)dev_get_drvdata(&pdev->dev);
+	ZCPRINT("hello_remove, zcdevice->buf: %s\n", zcdevice->buf);
+	return 0;
+}
+
+static struct platform_driver hello_driver=  
+{
+	.driver.name = "ZhengChen's platform_device",
+	.probe = hello_probe,
+	.remove = hello_remove,
+};
+
 static int __init hello_init(void)
 {
-    int i = 0;
-    char c[256];
+	int i = 0;
+	char c[256];
+	int ret;
 	//struct zc_device *zdev = NULL;
 	
-    sprintf(c,"Hello World inited. Linux kernel version %s\n", UTS_RELEASE);
-    myPrint((const char*)c);
+	sprintf(c,"Hello World inited. Linux kernel version %s\n", UTS_RELEASE);
+	myPrint((const char*)c);
 	printk(KERN_INFO "Calling process is \"%s\" (pid %i)\n", current->comm, current->pid);
 //    printk(KERN_ALERT "Hello World inited\n");
-    
-    for(i = 0; i < count; i++)
-    {
-        sprintf(c,"  Hello %s\n", name);
-        myPrint((const char*)c);
+
+	for(i = 0; i < count; i++)
+	{
+		sprintf(c,"  Hello %s\n", name);
+		myPrint((const char*)c);
 //        printk(KERN_ALERT "    Hello %s\n", name);
-    }
+	}
 	
 	printk(KERN_INFO "a=%d, b=%d, dependency_sum=%d\n", a, b, dependency_sum(a, b));
 	
@@ -344,20 +369,25 @@ static int __init hello_init(void)
 		// return -ENOMEM;
 	zdevice.fops = &zc_fops;
 	zdevice.have_data = true;
+	strcpy(zdevice.buf, "test data.");
 	
-	zc_register_device(&zdevice);
+	ret = zc_register_device(&zdevice);
+	if(ret == 0)
+	{
+		ret = platform_driver_register(&hello_driver);
+	}
 	ZCPRINT("addr of zdevice=%p\n", &zdevice);
 	
-    return 0;
+	return ret;
 }
 
 
 static void __exit hello_exit(void)
 {
-    char c[256];
+	char c[256];
 	// struct zc_device *zdev = NULL;
-    sprintf(c, "Hello World exit with: name=%s, count=%d\n", name, count);
-    myPrint(c);
+	sprintf(c, "Hello World exit with: name=%s, count=%d\n", name, count);
+	myPrint(c);
 	printk(KERN_INFO "Calling process is \"%s\" (pid %i)\n", current->comm, current->pid);
 
 	// zdev = get_zc_device();
@@ -365,6 +395,7 @@ static void __exit hello_exit(void)
 	// if(zdevice)
 	// {
 	zc_unregister_device(&zdevice);
+	platform_driver_unregister(&hello_driver);
 	// }
 	// kfree(zdev);
 }

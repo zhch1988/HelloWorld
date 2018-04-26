@@ -1,4 +1,4 @@
-SUBDIRS=dependency_module
+SUBDIRS=
 define make_subdir
 	@for subdir in $(SUBDIRS) ; do \
 	(cd $$subdir && make $1) \
@@ -6,8 +6,8 @@ define make_subdir
 endef
 
 ifneq ($(KERNELRELEASE),)
-	obj-m := helloworld.o
-	helloworld-objs := hello.o helper.o zc_dev.o
+	obj-m := my_device.o
+	my_device-objs := mydevice.o
 	EXTRA_CFLAGS += -I$(PWD)/../include
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
