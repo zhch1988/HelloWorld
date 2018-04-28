@@ -44,6 +44,7 @@ static int zc_open(struct inode *inode, struct file *filp)
 	if (!idev) 
 		return -ENODEV;
 	filp->private_data = idev;
+	ZCPRINT("zc_open, filp->f_flags=0x%x\n", filp->f_flags);
 	return 0;
 }
 
