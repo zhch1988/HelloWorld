@@ -6,6 +6,7 @@
 #include <linux/device.h>
 #include <linux/cdev.h>
 #include <linux/mutex.h>
+#include <linux/completion.h>
 
 #include "zc_cdev.h"
 
@@ -35,6 +36,8 @@ struct zc_device
 	bool have_data;
 	zc_ioctl_data received_data;
 	wait_queue_head_t inq, outq;
+	struct task_struct * tsk;
+	struct completion comp;
 };
 
 int __must_check zc_register_device(struct zc_device *vdev);

@@ -1,10 +1,12 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/vermagic.h>
+#include <linux/kthread.h>
 #include <linux/sched.h>
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
+#include <linux/sched/signal.h>
 
 #include "helper.h"
 #include "ZCLog.h"
@@ -344,6 +346,29 @@ static struct platform_driver hello_driver=
 	.remove = hello_remove,
 };
 
+static int test_thread(void *data)
+{
+	struct zc_device *zcdevice = (struct zc_device *) data;
+
+	ZCPRINT("Thread function %s() start\n", __FUNCTION__);
+	allow_signal(SIGTERM);
+	allow_signal(SIGKILL);
+
+	set_current_state(TASK_INTERRUPTIBLE);
+	while (!signal_pending(current) && !kthread_should_stop())
+	{
+		schedule_timeout(HZ * 2);
+	}
+	ZCPRINT("Thread function %s() end\n", __FUNCTION__);
+	complete_and_exit(&zcdevice->comp, 1);
+}
+
+static void uninit(void)
+{
+	zc_unregister_device(&zdevice);
+	platform_driver_unregister(&hello_driver);
+}
+
 static int __init hello_init(void)
 {
 	int i = 0;
@@ -373,11 +398,24 @@ static int __init hello_init(void)
 	strcpy(zdevice.buf, "test data.");
 	
 	ret = zc_register_device(&zdevice);
-	if(ret == 0)
+	if(ret != 0)
 	{
-		ret = platform_driver_register(&hello_driver);
+		return ret;
 	}
+	ret = platform_driver_register(&hello_driver);
 	ZCPRINT("addr of zdevice=%p\n", &zdevice);
+	if(ret != 0)
+	{
+		return ret;
+	}
+	init_completion(&zdevice.comp);
+	zdevice.tsk = kthread_run(test_thread, &zdevice, "zcThread");
+	if (IS_ERR(zdevice.tsk)) {  
+		ZCPRINT("create kthread failed!\n");
+		uninit();
+		return -EAGAIN;
+	}
+
 	
 	return ret;
 }
@@ -391,14 +429,14 @@ static void __exit hello_exit(void)
 	myPrint(c);
 	printk(KERN_INFO "Calling process is \"%s\" (pid %i)\n", current->comm, current->pid);
 
-	// zdev = get_zc_device();
-	// printk(KERN_INFO "zdev=%p", zdev);
-	// if(zdevice)
-	// {
-	zc_unregister_device(&zdevice);
-	platform_driver_unregister(&hello_driver);
-	// }
-	// kfree(zdev);
+	if (!IS_ERR(zdevice.tsk))
+	{
+		int ret = kthread_stop(zdevice.tsk);  
+		ZCPRINT("kthread function has stopped ,return %d\n", ret);
+		wait_for_completion(&zdevice.comp);
+	}
+	uninit();
+
 }
 
 module_init(hello_init);
