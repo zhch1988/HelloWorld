@@ -33,7 +33,8 @@ module_param(b, int, S_IRUGO | S_IWUSR);
 extern int dependency_sum(int a, int b);
 
 struct zc_device zdevice = {
-	.have_data = true
+	.have_data = true,
+	.received_data.length = 256
 };
 
 
@@ -142,16 +143,16 @@ static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	// struct audio_device *audio;
 	// struct audio_transfer *transfer;
 	char *ioarg;
-	zc_ioctl_data data;
+	//zc_ioctl_data data;
 
 	ZCPRINT("zc_ioctl\n");
-    /* 检测命令的有效性 */
+	/* 检测命令的有效性 */
 	if (_IOC_TYPE(cmd) != ZC_MAGIC) 
 		return -EINVAL;
 	if (_IOC_NR(cmd) > ZC_IOC_MAXNR) 
 		return -EINVAL;
 
-    /* 根据命令类型，检测参数空间是否可以访问 */
+	/* 根据命令类型，检测参数空间是否可以访问 */
 	if (_IOC_DIR(cmd) & _IOC_READ)
 		err = !access_ok(VERIFY_WRITE, (void *)arg, _IOC_SIZE(cmd));
 	else if (_IOC_DIR(cmd) & _IOC_WRITE)
@@ -159,47 +160,35 @@ static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	if (err) 
 		return -EFAULT;
 
-    /* 根据命令，执行相应的操作 */
+	/* 根据命令，执行相应的操作 */
 	switch(cmd) {
 
-      /* 打印当前设备信息 */
+		/* 打印当前设备信息 */
 		case ZC_IOC:
+		ZCPRINT("zc_ioctl, ZC_IOC\n");
 		break;
-      /* 读取参数 */
+		/* 读取参数 */
 		case ZC_IOCGET:
         //ret = put_user(bias, (int *)arg);
+        ZCPRINT("zc_ioctl, ZC_IOCGET\n");
 		if(!idev->have_data)
 			return -EAGAIN;
 		if((ret = copy_to_user((void *)arg, &idev->received_data, sizeof(zc_ioctl_data))))
 		{
 			return -EFAULT;  
 		}
-		idev->have_data = false;
+		//idev->have_data = false;
 		break;
-      /* 设置参数 */
+		/* 设置参数 */
 		case ZC_IOCSET: 
         //ret = get_user(ioarg, (int *)arg);
-		memset(&data, 0, sizeof(zc_ioctl_data));
-		if((ret = copy_from_user(&data, (void *)arg, sizeof(zc_ioctl_data))))
+        ZCPRINT("zc_ioctl, ZC_IOCSET\n");
+		memset(&idev->received_data, 0, sizeof(zc_ioctl_data));
+		if((ret = copy_from_user(&idev->received_data, (void *)arg, sizeof(zc_ioctl_data))))
 		{
 			return -EFAULT;
 		}
-		/* audio = (struct audio_device *)zc_get_drvdata(idev);
-		if(!audio)
-			return -EFAULT;
-		transfer = &audio->transfer;
-		if(!transfer)
-			return -EFAULT;
-		if(data.length > transfer->in_ep->maxpacket)
-			return -EINVAL;
-		memset(transfer->in_req->buf, 0 , transfer->in_ep->maxpacket);
-		memcpy(transfer->in_req->buf, &data.data, data.length);
-		transfer->in_req->length = data.length;
-		//transfer->in_req->length = 64;
-		if ((ret = usb_ep_queue(transfer->in_ep, transfer->in_req, GFP_ATOMIC)) < 0) {
-			ZCPRINT("Failed to requeue request (%d).\n", ret);
-			usb_ep_set_halt(transfer->in_ep);
-		} */
+
 		break;
 
 		default:  
