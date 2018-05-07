@@ -80,8 +80,15 @@ static ssize_t zc_write(struct file *filp, const char __user *buf,
 		return -EFAULT;
 	}
 
-	if (down_interruptible(&idev->sem))
-		return -ERESTARTSYS;
+	if (filp->f_flags & O_NONBLOCK)
+	{
+		if (down_trylock(&idev->sem))
+			return -EAGAIN;
+	} else
+	{
+		if (down_interruptible(&idev->sem))
+			return -ERESTARTSYS;
+	}
 
 	if(filp->f_pos >= sizeof(idev->buf))
 	{
@@ -198,9 +205,6 @@ static ssize_t zc_read(struct file *filp, char __user *buf, size_t size, loff_t 
 		return 0; /* EOF */
 	}
 
-	if (filp->f_flags & O_NONBLOCK)
-		return -EAGAIN;
-
 	err = !access_ok(VERIFY_WRITE, (void *)buf, size);
 	if (err)
 	{
@@ -211,13 +215,24 @@ static ssize_t zc_read(struct file *filp, char __user *buf, size_t size, loff_t 
 	while (!signal_pending(current) && !idev->have_data) /* 没有数据可读，考虑为什么不用if，而用while */
 	{
 		// 非阻塞式读取需要立刻返回
+		if (filp->f_flags & O_NONBLOCK)
+			return -EAGAIN;
 		wait_event_interruptible(idev->inq, idev->have_data);
 	}
-	if (down_interruptible(&idev->sem))
+	if (filp->f_flags & O_NONBLOCK)
 	{
-		ret = -ERESTARTSYS;
-		goto out;
+		if (down_trylock(&idev->sem))
+		{
+			return -EAGAIN;
+		}
+	} else 
+	{
+		if (down_interruptible(&idev->sem))
+		{
+			return -ERESTARTSYS;
+		}
 	}
+	
 
 	// if(idev->have_data && *ppos < strlen(data))
 	// {
