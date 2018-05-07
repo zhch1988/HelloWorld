@@ -33,7 +33,7 @@ module_param(b, int, S_IRUGO | S_IWUSR);
 extern int dependency_sum(int a, int b);
 
 struct zc_device zdevice = {
-	.have_data = true,
+	.have_data = false,
 	.received_data.length = 256
 };
 
@@ -64,13 +64,14 @@ static ssize_t zc_write(struct file *filp, const char __user *buf,
 	size_t ksize = 64;
 	int i = 0, err = 0;
 	int ret = 0;
-	char *tmpbuf;
+	char *tmpbuf = NULL;
 
 	// struct audio_device *audio;
 	// struct audio_transfer *transfer;
 	struct zc_device* idev = filp->private_data;
 	
 	ZCPRINT("zc_write, size=%lu, offset=%lld\n", sz, *off);
+
 	
 	err = !access_ok(VERIFY_READ, (void *)buf, sz);
 	if (err)
@@ -79,60 +80,45 @@ static ssize_t zc_write(struct file *filp, const char __user *buf,
 		return -EFAULT;
 	}
 
-	
+	if (down_interruptible(&idev->sem))
+		return -ERESTARTSYS;
+
+	if(filp->f_pos >= sizeof(idev->buf))
+	{
+		ret = 0;
+		goto out;
+	}
+
 	tmpbuf = kzalloc(sz, GFP_KERNEL);
+	if(!tmpbuf)
+	{
+		ret = -ENOMEM;
+		goto out;
+	}
 	if(copy_from_user(tmpbuf, buf, sz))  
 	{
-		kfree(tmpbuf);
-		return -EFAULT;  
+		ret = -EFAULT;
+		goto out;
 	}
-	/* audio = (struct audio_device *)zc_get_drvdata(idev);
-	if(!audio)
-		return -EFAULT;
-	transfer = &audio->transfer;
-	if(!transfer)
-		return -EFAULT;
-	//sendDataTest(transfer, tmpbuf, sz);
-	audio_send(tmpbuf, sz, transfer); */
-	
-#if 0
-	tmpbuf = kzalloc(64, GFP_KERNEL);
-	while(sended < sz)
-	{
-		if(sz - sended <= 64)
-			ksize = sz - sended;
-		else
-			ksize = 64;
-		
-		if(copy_from_user(tmpbuf, buf + sended, ksize))  
-		{  
-			return -EFAULT;  
-		}
-#ifdef ZCDEBUG
-		sprintf(printBuf, "");
-		for(i = 0; i < ksize ; i++)
-		{
-			sprintf(printBuf, "%s0x%02x ", printBuf, tmpbuf[i]);
-		}
-		ZCPRINT("printBuf: %s\n", printBuf);
-#endif
-		if(idev)
-		{
-			audio = (struct audio_device *)zc_get_drvdata(idev);
-			transfer = &audio->transfer;
-			ret = sendData(transfer, tmpbuf, ksize);
-			//ZCPRINT("sendData returns %d", ret);
-			if(ret)
-			{
-				break;
-			}
-		}
-		sended += ksize;
-	}
-#endif
-	kfree(tmpbuf);
 
-	return sz;
+	if(filp->f_pos + sz > sizeof(idev->buf))
+	{
+		sz = sizeof(idev->buf) - filp->f_pos;
+	}
+	memcpy(idev->buf, tmpbuf, sz);
+	ret = sz;
+	idev->dataLen = ret;
+	idev->have_data = true;
+
+	wake_up_interruptible(&idev->inq);
+	// filp->f_pos += sz;
+
+out:
+	up (&idev->sem);
+	if(tmpbuf)
+		kfree(tmpbuf);
+
+	return ret;
 }
 
 static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
@@ -202,31 +188,71 @@ static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 static ssize_t zc_read(struct file *filp, char __user *buf, size_t size, loff_t *ppos)
 {
 	struct zc_device* idev = filp->private_data;
-	char data[] = "你好\n";
+	//char data[] = "你好\n";
 	int ret = 0, err = 0;
 
 	ZCPRINT("zc_read, size=%lu, ppos=%lld\n", size, *ppos);
-	if(idev->have_data && *ppos < strlen(data))
+	if(idev->dataLen > 0 && *ppos >= idev->dataLen)
 	{
-		if ((err = copy_to_user(buf, (void*)(data + *ppos), strlen(data) - *ppos)))
-		{
-			ret = -EFAULT;
-		}
-		else
-		{
-			ret = strlen(data) - err;
-			*ppos += ret;
-			// ZCPRINT("read %d bytes(s) from %p\n", ret, data);
-			// printk(KERN_INFO "read %d bytes(s) from %d\n", count, p);
-		}
+		*ppos = 0;
+		return 0; /* EOF */
+	}
+
+	if (filp->f_flags & O_NONBLOCK)
+		return -EAGAIN;
+
+	err = !access_ok(VERIFY_WRITE, (void *)buf, size);
+	if (err)
+	{
+		printk(KERN_ERR "zc_read access error\n");
+		return -EFAULT;
+	}
+
+	while (!signal_pending(current) && !idev->have_data) /* 没有数据可读，考虑为什么不用if，而用while */
+	{
+		// 非阻塞式读取需要立刻返回
+		wait_event_interruptible(idev->inq, idev->have_data);
+	}
+	if (down_interruptible(&idev->sem))
+	{
+		ret = -ERESTARTSYS;
+		goto out;
+	}
+
+	// if(idev->have_data && *ppos < strlen(data))
+	// {
+	// 	if ((err = copy_to_user(buf, (void*)(data + *ppos), strlen(data) - *ppos)))
+	// 	{
+	// 		ret = -EFAULT;
+	// 	}
+	// 	else
+	// 	{
+	// 		ret = strlen(data) - err;
+	// 		*ppos += ret;
+	// 	}
+	// }
+	// else
+	// {
+	// 	ret = 0;
+	// }
+	if(idev->have_data)
+	{
+		if(size > sizeof(idev->buf))
+			size = sizeof(idev->buf);
+		if(size > idev->dataLen)
+			size = idev->dataLen;
+		err = copy_to_user(buf, (void*)(idev->buf + *ppos), size);
+		ret = size - err;
+		*ppos += ret;
 	}
 	else
 	{
 		ret = 0;
 	}
-	//idev->have_data = !(idev->have_data);
+	if(ret > 0)
+		idev->have_data = false;
 	ZCPRINT("read %d bytes(s)\n", ret);
-
+	
   // unsigned long p =  *ppos;
   // unsigned int count = size;
   // int ret = 0;
@@ -255,6 +281,8 @@ static ssize_t zc_read(struct file *filp, char __user *buf, size_t size, loff_t 
 
   // have_data = false; /* 表明不再有数据可读 */
   // /* 唤醒写进程 */
+out:
+	up (&idev->sem);
 	return ret;
 }
 
@@ -289,7 +317,11 @@ static loff_t zc_seek(struct file * filp , loff_t offset, int whence)
 		newpos = filp->f_pos + offset;
 		break;
 	case 2: /* SEEK_END */
-		newpos = sizeof(dev->buf) + offset;
+		// 文件指针不允许超过buffer大小
+		if(offset > 0)
+			newpos = sizeof(dev->buf);
+		else
+			newpos = sizeof(dev->buf) + offset;
 		break;
 	default: /* can't happen */
 		return -EINVAL;
@@ -383,7 +415,9 @@ static int __init hello_init(void)
 	// if (zdev == NULL)
 		// return -ENOMEM;
 	zdevice.fops = &zc_fops;
-	zdevice.have_data = true;
+	zdevice.have_data = false;
+	zdevice.dataLen = 0;
+	sema_init(&zdevice.sem, 1);
 	strcpy(zdevice.buf, "test data.");
 	
 	ret = zc_register_device(&zdevice);

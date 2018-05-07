@@ -6,6 +6,7 @@
 #include <linux/device.h>
 #include <linux/cdev.h>
 #include <linux/mutex.h>
+#include <linux/semaphore.h>
 #include <linux/completion.h>
 
 #include "zc_cdev.h"
@@ -30,12 +31,14 @@ struct zc_device
 	/* callbacks */
 	//void (*release)(struct ifly_device *idev);
 
-	char buf[256];
+	char buf[512];
+	unsigned int dataLen;
 	/* serialization lock */
 	//struct mutex *lock;
 	bool have_data;
 	zc_ioctl_data received_data;
 	wait_queue_head_t inq, outq;
+	struct semaphore sem;
 	struct task_struct * tsk;
 	struct completion comp;
 };
