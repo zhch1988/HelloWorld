@@ -399,6 +399,37 @@ static int test_thread(void *data)
 	complete_and_exit(&zcdevice->comp, 1);
 }
 
+static int init(void)
+{
+	int ret = 0;
+	zdevice.fops = &zc_fops;
+	zdevice.have_data = false;
+	zdevice.dataLen = 0;
+	sema_init(&zdevice.sem, 1);
+	strcpy(zdevice.buf, "test data.");
+	
+	ret = zc_register_device(&zdevice);
+	if(ret != 0)
+	{
+		goto err_register_device;
+	}
+	ret = platform_driver_register(&hello_driver);
+	ZCPRINT("addr of zdevice=%p\n", &zdevice);
+	if(ret != 0)
+	{
+		goto err_register_driver;
+	}
+	init_completion(&zdevice.comp);
+
+	return ret;
+
+err_register_driver:
+	zc_unregister_device(&zdevice);
+err_register_device:
+	return ret;
+
+}
+
 static void uninit(void)
 {
 	zc_unregister_device(&zdevice);
@@ -429,24 +460,27 @@ static int __init hello_init(void)
 	// zdev = kzalloc(sizeof(struct zc_device), GFP_KERNEL);
 	// if (zdev == NULL)
 		// return -ENOMEM;
-	zdevice.fops = &zc_fops;
-	zdevice.have_data = false;
-	zdevice.dataLen = 0;
-	sema_init(&zdevice.sem, 1);
-	strcpy(zdevice.buf, "test data.");
+	// zdevice.fops = &zc_fops;
+	// zdevice.have_data = false;
+	// zdevice.dataLen = 0;
+	// sema_init(&zdevice.sem, 1);
+	// strcpy(zdevice.buf, "test data.");
 	
-	ret = zc_register_device(&zdevice);
+	// ret = zc_register_device(&zdevice);
+	// if(ret != 0)
+	// {
+	// 	return ret;
+	// }
+	// ret = platform_driver_register(&hello_driver);
+	// ZCPRINT("addr of zdevice=%p\n", &zdevice);
+	// if(ret != 0)
+	// {
+	// 	return ret;
+	// }
+	// init_completion(&zdevice.comp);
+	ret = init();
 	if(ret != 0)
-	{
 		return ret;
-	}
-	ret = platform_driver_register(&hello_driver);
-	ZCPRINT("addr of zdevice=%p\n", &zdevice);
-	if(ret != 0)
-	{
-		return ret;
-	}
-	init_completion(&zdevice.comp);
 	zdevice.tsk = kthread_run(test_thread, &zdevice, "zcThread");
 	if (IS_ERR(zdevice.tsk)) {  
 		ZCPRINT("create kthread failed!\n");
