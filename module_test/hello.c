@@ -7,11 +7,14 @@
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <linux/sched/signal.h>
+#include <linux/proc_fs.h>	/* Necessary because we use the proc fs */
 
 #include "helper.h"
 #include "ZCLog.h"
 #include "zc_dev.h"
 #include "zc_cdev.h"
+
+#define procfs_name "zc_procfile"
 
 //MODULE_LICENSE("Dual BSD/GPL");
 MODULE_LICENSE("GPL");
@@ -41,8 +44,7 @@ struct zc_device zdevice = {
 static int zc_open(struct inode *inode, struct file *filp)
 {
 	struct zc_device* idev = container_of(inode->i_cdev, struct zc_device, cdev);
-	
-	
+
 	ZCPRINT("zc_open, inode->i_cdev=%p, idev=%p\n", inode->i_cdev, idev);
 	if (!idev) 
 		return -ENODEV;
@@ -60,9 +62,9 @@ static int zc_release(struct inode *inode, struct file *filp)
 static ssize_t zc_write(struct file *filp, const char __user *buf,
 	size_t sz, loff_t *off)
 {
-	size_t sended = 0, realSended = 0;
-	size_t ksize = 64;
-	int i = 0, err = 0;
+	// size_t sended = 0, realSended = 0;
+	// size_t ksize = 64;
+	int err = 0;
 	int ret = 0;
 	char *tmpbuf = NULL;
 
@@ -135,7 +137,7 @@ static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	struct zc_device* idev = filp->private_data;
 	// struct audio_device *audio;
 	// struct audio_transfer *transfer;
-	char *ioarg;
+	// char *ioarg;
 	//zc_ioctl_data data;
 
 	ZCPRINT("zc_ioctl\n");
@@ -164,12 +166,31 @@ static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		case ZC_IOCGET:
         //ret = put_user(bias, (int *)arg);
         ZCPRINT("zc_ioctl, ZC_IOCGET\n");
+        if (filp->f_flags & O_NONBLOCK)
+		{
+			if (down_trylock(&idev->sem))
+			{
+				return -EAGAIN;
+			}
+		} else 
+		{
+			if (down_interruptible(&idev->sem))
+			{
+				return -ERESTARTSYS;
+			}
+		}
+
 		if(!idev->have_data)
+		{
+			up (&idev->sem);
 			return -EAGAIN;
+		}
 		if((ret = copy_to_user((void *)arg, &idev->received_data, sizeof(zc_ioctl_data))))
 		{
+			up (&idev->sem);
 			return -EFAULT;  
 		}
+		up (&idev->sem);
 		//idev->have_data = false;
 		break;
 		/* 设置参数 */
@@ -296,7 +317,8 @@ static ssize_t zc_read(struct file *filp, char __user *buf, size_t size, loff_t 
 
   // have_data = false; /* 表明不再有数据可读 */
   // /* 唤醒写进程 */
-out:
+
+// out:
 	up (&idev->sem);
 	return ret;
 }
@@ -390,21 +412,98 @@ static int test_thread(void *data)
 	allow_signal(SIGTERM);
 	allow_signal(SIGKILL);
 
-	set_current_state(TASK_INTERRUPTIBLE);
+	ZCPRINT("HZ=%u\n", HZ);
 	while (!signal_pending(current) && !kthread_should_stop())
 	{
+		set_current_state(TASK_INTERRUPTIBLE);
 		schedule_timeout(HZ * 2);
 	}
 	ZCPRINT("Thread function %s() end\n", __FUNCTION__);
 	complete_and_exit(&zcdevice->comp, 1);
 }
 
+/**
+/proc下的节点
+*/
+static int procfile_open(struct inode *inode, struct file *filp)
+{
+	ZCPRINT("zc_open, inode->i_cdev=%p\n", inode->i_cdev);
+	ZCPRINT("zc_open, filp->f_flags=0x%x\n", filp->f_flags);
+	return 0;
+}
+
+
+static ssize_t procfile_read(struct file *filp, char __user *buf, size_t size, loff_t *ppos)
+{
+	int err;
+	ssize_t ret;
+	const char message[] = "HelloWorld!\n";
+	
+	ZCPRINT("procfile_read (/proc/%s) called, *ppos=%lld\n", procfs_name, *ppos);
+	err = !access_ok(VERIFY_WRITE, (void *)buf, size);
+	if (err)
+	{
+		printk(KERN_ERR "procfile_read access error\n");
+		return -EFAULT;
+	}
+	if (*ppos > 0) {
+		/* we have finished to read, return 0 */
+		ret  = 0;
+	} else {
+		/* fill the buffer, return the buffer size */
+		if (copy_to_user( buf, message, sizeof(message))) {
+			return -EFAULT;
+		}
+		ret = sizeof(message);
+		*ppos += ret;
+	}
+	
+	/* 
+	 * We give all of our information in one go, so if the
+	 * user asks us if we have more information the
+	 * answer should always be no.
+	 *
+	 * This is important because the standard read
+	 * function from the library would continue to issue
+	 * the read system call until the kernel replies
+	 * that it has no more information, or until its
+	 * buffer is filled.
+	 */
+	
+
+	return ret;
+}
+
+static ssize_t procfile_write(struct file *filp, const char __user *buf,
+	size_t sz, loff_t *off)
+{
+
+
+	// if (copy_from_user( &cookie_pot[cookie_index], buff, len )) {
+	// 	return -EFAULT;
+	// }
+
+
+	return sz;
+}
+
+static const struct file_operations proc_fops = {
+	.owner = THIS_MODULE,
+	.open = procfile_open,
+	.read = procfile_read,
+	.write = procfile_write,
+};
+
+
 static int init(void)
 {
 	int ret = 0;
+	struct proc_dir_entry *proc_entry;
+
 	zdevice.fops = &zc_fops;
 	zdevice.have_data = false;
 	zdevice.dataLen = 0;
+	zdevice.my_proc = NULL;
 	sema_init(&zdevice.sem, 1);
 	strcpy(zdevice.buf, "test data.");
 	
@@ -421,8 +520,34 @@ static int init(void)
 	}
 	init_completion(&zdevice.comp);
 
+	proc_entry = proc_create(procfs_name, 0644, NULL, &proc_fops);
+	
+	if (proc_entry == NULL) {
+		
+		ZCPRINT("Error: Could not initialize /proc/%s\n",
+		       procfs_name);
+		ret = -ENOMEM;
+		goto err_create_proc;
+	}
+
+	// proc_entry->read_proc = procfile_read;
+	// proc_entry->owner 	 = THIS_MODULE;
+	// proc_entry->mode 	 = S_IFREG | S_IRUGO;
+	// proc_entry->uid 	 = 0;
+	// proc_entry->gid 	 = 0;
+	// proc_entry->size 	 = 37;
+
+	ZCPRINT("/proc/%s created\n", procfs_name);
+	zdevice.my_proc = proc_entry;
+
 	return ret;
 
+err_create_proc:
+	if(zdevice.my_proc)
+	{
+		proc_remove(zdevice.my_proc);
+		zdevice.my_proc = NULL;
+	}
 err_register_driver:
 	zc_unregister_device(&zdevice);
 err_register_device:
@@ -432,6 +557,11 @@ err_register_device:
 
 static void uninit(void)
 {
+	if(zdevice.my_proc)
+	{
+		proc_remove(zdevice.my_proc);
+		zdevice.my_proc = NULL;
+	}
 	zc_unregister_device(&zdevice);
 	platform_driver_unregister(&hello_driver);
 }

@@ -41,6 +41,8 @@ struct zc_device
 	struct semaphore sem;
 	struct task_struct * tsk;
 	struct completion comp;
+
+	struct proc_dir_entry *my_proc;
 };
 
 int __must_check zc_register_device(struct zc_device *vdev);
