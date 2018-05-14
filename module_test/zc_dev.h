@@ -8,11 +8,25 @@
 #include <linux/mutex.h>
 #include <linux/semaphore.h>
 #include <linux/completion.h>
+#include <linux/timer.h>
 
 #include "zc_cdev.h"
 
 #define DEV_NAME "zc_dev"
 #define DEV_NUM 1
+
+struct proc_data
+{
+	struct proc_dir_entry *proc_entry;
+
+	unsigned int loops;
+	unsigned long prevjiffies;
+	struct timer_list timer;
+	char buf[4096];
+	char *cur_buf;
+	wait_queue_head_t wait;
+
+};
 
 struct zc_device
 {
@@ -42,7 +56,8 @@ struct zc_device
 	struct task_struct * tsk;
 	struct completion comp;
 
-	struct proc_dir_entry *my_proc;
+	struct proc_data procData;
+
 };
 
 int __must_check zc_register_device(struct zc_device *vdev);

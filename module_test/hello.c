@@ -423,8 +423,25 @@ static int test_thread(void *data)
 }
 
 /**
-/proc下的节点
+/proc下的节点操作
 */
+static void timer_fn(unsigned long arg)
+{
+	struct zc_device *idev = (struct zc_device *) arg;
+	unsigned long j = jiffies;
+	
+	idev->procData.cur_buf += sprintf(idev->procData.cur_buf, "%9li %5li %5i %8i %5i   %s\n",
+		j, j - idev->procData.prevjiffies, in_interrupt() ? 1 : 0,
+		current->pid, smp_processor_id(), current->comm);
+	if (--idev->procData.loops) {
+		idev->procData.timer.expires += 20;
+		idev->procData.prevjiffies = j;
+		add_timer(&idev->procData.timer);
+	} else {
+		wake_up_interruptible(&idev->procData.wait);
+	}
+}
+
 static int procfile_open(struct inode *inode, struct file *filp)
 {
 	ZCPRINT("zc_open, inode->i_cdev=%p\n", inode->i_cdev);
@@ -437,7 +454,10 @@ static ssize_t procfile_read(struct file *filp, char __user *buf, size_t size, l
 {
 	int err;
 	ssize_t ret;
-	const char message[] = "HelloWorld!\n";
+	// const char message[] = "HelloWorld!\n";
+	unsigned long j = jiffies;
+	// char *message = zdevice.procData.buf;
+
 	
 	ZCPRINT("procfile_read (/proc/%s) called, *ppos=%lld\n", procfs_name, *ppos);
 	err = !access_ok(VERIFY_WRITE, (void *)buf, size);
@@ -450,11 +470,25 @@ static ssize_t procfile_read(struct file *filp, char __user *buf, size_t size, l
 		/* we have finished to read, return 0 */
 		ret  = 0;
 	} else {
+		/* fill the data for our timer function */
+		zdevice.procData.prevjiffies = j;
+		zdevice.procData.loops = 5;
+		memset(zdevice.procData.buf, 0, sizeof(zdevice.procData.buf));
+		zdevice.procData.cur_buf = zdevice.procData.buf;
+		zdevice.procData.cur_buf += sprintf(zdevice.procData.cur_buf, "    time     delta  inirq    pid   cpu  command \n");
+		/* register the timer */
+		zdevice.procData.timer.data = (unsigned long)(&zdevice);
+		zdevice.procData.timer.function = timer_fn;
+		zdevice.procData.timer.expires = j + 20; /* parameter */
+		add_timer(&zdevice.procData.timer);
+		/* wait for the buffer to fill */
+		wait_event_interruptible(zdevice.procData.wait, !zdevice.procData.loops);
+
 		/* fill the buffer, return the buffer size */
-		if (copy_to_user( buf, message, sizeof(message))) {
+		if (copy_to_user( buf, zdevice.procData.buf, sizeof(zdevice.procData.buf))) {
 			return -EFAULT;
 		}
-		ret = sizeof(message);
+		ret = sizeof(zdevice.procData.buf);
 		*ppos += ret;
 	}
 	
@@ -494,16 +528,50 @@ static const struct file_operations proc_fops = {
 	.write = procfile_write,
 };
 
+static int initProc(void)
+{
+	struct proc_dir_entry *proc_entry;
+	int ret = 0;
+	proc_entry = proc_create(procfs_name, 0644, NULL, &proc_fops);
+	
+	if (proc_entry == NULL) {
+		
+		ZCPRINT("Error: Could not initialize /proc/%s\n",
+		       procfs_name);
+		ret = -ENOMEM;
+		goto err_create_proc;
+	}
+	ZCPRINT("/proc/%s created\n", procfs_name);
+	zdevice.procData.proc_entry = proc_entry;
+
+	init_waitqueue_head(&zdevice.procData.wait);
+	return 0;
+err_create_proc:
+	if(zdevice.procData.proc_entry)
+	{
+		proc_remove(zdevice.procData.proc_entry);
+		zdevice.procData.proc_entry = NULL;
+	}
+	return ret;
+}
+
+static void uninitProc(void)
+{
+	if(zdevice.procData.proc_entry)
+	{
+		proc_remove(zdevice.procData.proc_entry);
+		zdevice.procData.proc_entry = NULL;
+	}
+}
 
 static int init(void)
 {
 	int ret = 0;
-	struct proc_dir_entry *proc_entry;
 
 	zdevice.fops = &zc_fops;
 	zdevice.have_data = false;
 	zdevice.dataLen = 0;
-	zdevice.my_proc = NULL;
+	zdevice.procData.proc_entry = NULL;
 	sema_init(&zdevice.sem, 1);
 	strcpy(zdevice.buf, "test data.");
 	
@@ -519,35 +587,15 @@ static int init(void)
 		goto err_register_driver;
 	}
 	init_completion(&zdevice.comp);
-
-	proc_entry = proc_create(procfs_name, 0644, NULL, &proc_fops);
-	
-	if (proc_entry == NULL) {
-		
-		ZCPRINT("Error: Could not initialize /proc/%s\n",
-		       procfs_name);
-		ret = -ENOMEM;
-		goto err_create_proc;
+	ret = initProc();
+	if(ret != 0)
+	{
+		goto err_init_proc;
 	}
-
-	// proc_entry->read_proc = procfile_read;
-	// proc_entry->owner 	 = THIS_MODULE;
-	// proc_entry->mode 	 = S_IFREG | S_IRUGO;
-	// proc_entry->uid 	 = 0;
-	// proc_entry->gid 	 = 0;
-	// proc_entry->size 	 = 37;
-
-	ZCPRINT("/proc/%s created\n", procfs_name);
-	zdevice.my_proc = proc_entry;
 
 	return ret;
 
-err_create_proc:
-	if(zdevice.my_proc)
-	{
-		proc_remove(zdevice.my_proc);
-		zdevice.my_proc = NULL;
-	}
+err_init_proc:
 err_register_driver:
 	zc_unregister_device(&zdevice);
 err_register_device:
@@ -557,11 +605,7 @@ err_register_device:
 
 static void uninit(void)
 {
-	if(zdevice.my_proc)
-	{
-		proc_remove(zdevice.my_proc);
-		zdevice.my_proc = NULL;
-	}
+	uninitProc();
 	zc_unregister_device(&zdevice);
 	platform_driver_unregister(&hello_driver);
 }
