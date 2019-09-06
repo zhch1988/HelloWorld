@@ -336,7 +336,7 @@ static unsigned int zc_poll(struct file *filp, poll_table *wait)
 	if (idev->have_data)         
 		mask |= POLLIN | POLLRDNORM;  /* readable */
 
-		return mask;
+	return mask;
 }
 
 static loff_t zc_seek(struct file * filp , loff_t offset, int whence)
